@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  mcp-server:
+    build: .
+    ports:
+      - "3001:3001"
+    environment:
+      - MCP_SERVER_PORT=3001
+      - LANGGRAPH_API_URL=http://agents:2024
+      - MCP_API_KEY=${MCP_API_KEY}
+      - SAFEWAY_API_KEY=${SAFEWAY_API_KEY}
+    depends_on:
+      - agents
+    networks:
+      - shopping-assistant
+
+  # Reference to agents service (assumed to exist)
+  agents:
+    image: shopping-assistant-agents:latest
+    ports:
+      - "2024:2024"
+    networks:
+      - shopping-assistant
+
+networks:
+  shopping-assistant:
+    driver: bridge

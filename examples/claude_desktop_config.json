@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "shopping-assistant": {
+      "command": "node",
+      "args": [
+        "/absolute/path/to/shopping-assistant-mcp/dist/mcp/server.js"
+      ],
+      "env": {
+        "LANGGRAPH_API_URL": "http://localhost:2024",
+        "MCP_SERVER_PORT": "3001",
+        "MCP_API_KEY": "your-api-key-here"
+      }
+    }
+  }
+}
