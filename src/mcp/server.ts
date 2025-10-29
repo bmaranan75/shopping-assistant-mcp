@@ -245,13 +245,17 @@ async function main() {
       
       const issuer = process.env.OAUTH2_ISSUER || 'https://sts.windows.net/b7f604a0-00a9-4188-9248-42f3a5aac2e9/';
       const audience = process.env.OAUTH2_AUDIENCE || '00000002-0000-0000-c000-000000000000';
+      const tokenEndpoint = process.env.OAUTH2_TOKEN_ENDPOINT || 
+        `https://login.microsoftonline.com/b7f604a0-00a9-4188-9248-42f3a5aac2e9/oauth2/token`;
       
-      // Return MCP OAuth metadata
+      // Return MCP OAuth metadata - explicitly for client credentials only
       const metadata = {
         resource: audience,
         authorization_servers: [issuer],
         bearer_methods_supported: ['header'],
         resource_documentation: 'https://github.com/bmaranan75/shopping-assistant-mcp',
+        grant_types_supported: ['client_credentials'],
+        token_endpoint: tokenEndpoint,
       };
       
       console.error('[MCP Server] OAuth Protected Resource metadata:', metadata);

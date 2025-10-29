@@ -103,27 +103,35 @@ export async function getOpenIDConfiguration(): Promise<OpenIDConfiguration> {
     // Fetch from upstream provider
     const upstreamConfig = await fetchUpstreamConfig(upstreamConfigUrl);
     
-    // Remove authorization_endpoint to prevent user login prompts
+    // Remove ALL user-facing endpoints and parameters to prevent any user login prompts
     // This forces clients like ChatGPT Enterprise to use Client Credentials flow only
     const {
       authorization_endpoint,
       userinfo_endpoint,
       end_session_endpoint,
+      device_authorization_endpoint,
+      check_session_iframe,
+      frontchannel_logout_supported,
+      http_logout_supported,
+      response_modes_supported,
       ...mcpConfig
     } = upstreamConfig;
     
-    // Ensure only client_credentials grant type is advertised
-    // MUST include token_endpoint for ChatGPT Enterprise to recognize OAuth support
+    // Build a minimal config that ONLY supports client_credentials
     const filteredConfig: OpenIDConfiguration = {
-      ...mcpConfig,
+      issuer: mcpConfig.issuer || upstreamConfig.issuer,
+      token_endpoint: mcpConfig.token_endpoint || upstreamConfig.token_endpoint,
+      jwks_uri: mcpConfig.jwks_uri || upstreamConfig.jwks_uri,
+      token_endpoint_auth_methods_supported: mcpConfig.token_endpoint_auth_methods_supported || ['client_secret_post', 'client_secret_basic'],
       grant_types_supported: ['client_credentials'],
       response_types_supported: ['token'],
-      // Ensure token_endpoint is present (should already be in mcpConfig)
-      token_endpoint: mcpConfig.token_endpoint || upstreamConfig.token_endpoint,
+      subject_types_supported: mcpConfig.subject_types_supported || ['public'],
+      id_token_signing_alg_values_supported: mcpConfig.id_token_signing_alg_values_supported || ['RS256'],
     };
     
-    console.log('[OpenID Discovery] Filtered config to support only Client Credentials flow');
+    console.log('[OpenID Discovery] Minimal config for Client Credentials flow only');
     console.log('[OpenID Discovery] Token endpoint:', filteredConfig.token_endpoint);
+    console.log('[OpenID Discovery] Grant types:', filteredConfig.grant_types_supported);
     
     // Cache the config
     cachedConfig = filteredConfig;
