@@ -227,6 +227,39 @@ async function main() {
       return;
     }
 
+    // MCP OAuth Protected Resource metadata endpoint
+    if ((req.url === '/.well-known/oauth-protected-resource' ||
+         req.url === '/sse/.well-known/oauth-protected-resource') &&
+        req.method === 'GET') {
+      console.error('[MCP Server] OAuth Protected Resource metadata request');
+      
+      // If authentication is disabled, return 404
+      if (MCP_AUTH_MODE === 'none') {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          error: 'not_found',
+          error_description: 'OAuth not enabled'
+        }));
+        return;
+      }
+      
+      const issuer = process.env.OAUTH2_ISSUER || 'https://sts.windows.net/b7f604a0-00a9-4188-9248-42f3a5aac2e9/';
+      const audience = process.env.OAUTH2_AUDIENCE || '00000002-0000-0000-c000-000000000000';
+      
+      // Return MCP OAuth metadata
+      const metadata = {
+        resource: audience,
+        authorization_servers: [issuer],
+        bearer_methods_supported: ['header'],
+        resource_documentation: 'https://github.com/bmaranan75/shopping-assistant-mcp',
+      };
+      
+      console.error('[MCP Server] OAuth Protected Resource metadata:', metadata);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(metadata, null, 2));
+      return;
+    }
+
     // OpenID Connect Discovery endpoint (support both root and /sse subpath)
     if ((req.url === '/.well-known/openid-configuration' || 
          req.url === '/sse/.well-known/openid-configuration') && 
