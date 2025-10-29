@@ -9,6 +9,7 @@ import http from 'http';
 
 import { MCPAgentClient } from './client.js';
 import { mcpTools } from './tools.js';
+import { verifyAuth, sendAuthError } from './auth-verifier.js';
 
 /**
  * MCP Server that exposes LangGraph agents via SSE (Server-Sent Events)
@@ -22,18 +23,39 @@ import { mcpTools } from './tools.js';
 
 // Configuration from environment
 const NEXTJS_URL = process.env.NEXTJS_URL || 'http://localhost:3000';
-const MCP_API_KEY = process.env.MCP_API_KEY;
 const MCP_SERVER_PORT = parseInt(process.env.MCP_SERVER_PORT || '3001', 10);
 const MCP_SERVER_HOST = process.env.MCP_SERVER_HOST || '0.0.0.0'; // Accept connections from any IP
+const MCP_AUTH_MODE = process.env.MCP_AUTH_MODE || 'oauth2'; // 'api-key', 'oauth2', 'hybrid', 'none'
 
-if (!MCP_API_KEY) {
-  console.error('ERROR: MCP_API_KEY environment variable is required');
-  console.error('Please set MCP_API_KEY in your .env.local file');
-  process.exit(1);
+// Validate OAuth2 configuration if using OAuth2 mode
+if (MCP_AUTH_MODE === 'oauth2' || MCP_AUTH_MODE === 'hybrid') {
+  const requiredVars = ['OAUTH2_JWKS_URI'];
+  const missingVars = requiredVars.filter(v => !process.env[v]);
+  
+  if (missingVars.length > 0) {
+    console.error(`ERROR: OAuth2 authentication requires the following environment variables:`);
+    missingVars.forEach(v => console.error(`  - ${v}`));
+    console.error(`\nOptional but recommended:`);
+    console.error(`  - OAUTH2_ISSUER (token issuer to verify)`);
+    console.error(`  - OAUTH2_AUDIENCE (token audience to verify)`);
+    console.error(`\nPlease configure these in your .env.local file`);
+    console.error(`Or set MCP_AUTH_MODE=none to disable authentication (not recommended for production)`);
+    process.exit(1);
+  }
 }
 
-// Initialize HTTP client
-const agentClient = new MCPAgentClient(NEXTJS_URL, MCP_API_KEY);
+// Validate API key if using API key mode
+if (MCP_AUTH_MODE === 'api-key' || MCP_AUTH_MODE === 'hybrid') {
+  if (!process.env.MCP_API_KEY) {
+    console.error('ERROR: MCP_API_KEY environment variable is required when using API key authentication');
+    console.error('Please set MCP_API_KEY in your .env.local file');
+    console.error(`Or set MCP_AUTH_MODE=oauth2 to use OAuth2 authentication only`);
+    process.exit(1);
+  }
+}
+
+// Initialize HTTP client (no authentication needed here, it will be passed per request)
+const agentClient = new MCPAgentClient(NEXTJS_URL);
 
 // Create MCP server
 const server = new Server(
@@ -159,7 +181,17 @@ async function main() {
   console.error(`[MCP Server] Transport: SSE (Server-Sent Events)`);
   console.error(`[MCP Server] Server URL: http://${MCP_SERVER_HOST}:${MCP_SERVER_PORT}`);
   console.error(`[MCP Server] Next.js API URL: ${NEXTJS_URL}`);
-  console.error(`[MCP Server] MCP_API_KEY: ${MCP_API_KEY!.substring(0, 10)}... (truncated)`);
+  console.error(`[MCP Server] Authentication Mode: ${MCP_AUTH_MODE}`);
+  
+  if (MCP_AUTH_MODE === 'oauth2' || MCP_AUTH_MODE === 'hybrid') {
+    console.error(`[MCP Server] OAuth2 JWKS URI: ${process.env.OAUTH2_JWKS_URI}`);
+    if (process.env.OAUTH2_ISSUER) {
+      console.error(`[MCP Server] OAuth2 Issuer: ${process.env.OAUTH2_ISSUER}`);
+    }
+    if (process.env.OAUTH2_AUDIENCE) {
+      console.error(`[MCP Server] OAuth2 Audience: ${process.env.OAUTH2_AUDIENCE}`);
+    }
+  }
 
   // Create HTTP server for SSE transport
   const httpServer = http.createServer(async (req, res) => {
@@ -190,7 +222,29 @@ async function main() {
 
     // MCP SSE endpoint
     if (req.url === '/sse' && req.method === 'POST') {
-      console.error('[MCP Server] New SSE connection established');
+      console.error('[MCP Server] New SSE connection attempt');
+
+      // Verify authentication
+      const authResult = await verifyAuth(req);
+      
+      if (!authResult.success) {
+        console.error('[MCP Server] Authentication failed:', authResult.error);
+        sendAuthError(res, authResult.error || 'Authentication required');
+        return;
+      }
+
+      console.error('[MCP Server] Authentication successful');
+      
+      // Store auth tokens for this connection
+      if (authResult.accessToken) {
+        agentClient.setAccessToken(authResult.accessToken);
+      }
+      
+      if (authResult.userToken) {
+        agentClient.setUserToken(authResult.userToken);
+      }
+
+      console.error('[MCP Server] SSE connection established');
 
       const transport = new SSEServerTransport('/message', res);
       await server.connect(transport);

@@ -16,6 +16,12 @@
     "sourceMap": true,
     "types": ["node"]
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "include": [
+    "src/mcp/**/*",
+    "src/lib/oauth2-client.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
 }

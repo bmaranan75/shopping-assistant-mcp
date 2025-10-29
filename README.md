@@ -47,7 +47,7 @@ npm install
 
 ## Configuration
 
-Create `.env` file:
+Create `.env.local` file:
 
 ```bash
 # MCP Server
@@ -56,7 +56,29 @@ MCP_SERVER_PORT=3001
 # LangGraph Agents (required)
 LANGGRAPH_API_URL=http://localhost:2024
 
-# Authentication (optional)
+# Authentication Mode (choose one)
+MCP_AUTH_MODE=oauth2  # Options: 'oauth2', 'api-key', 'hybrid', 'none'
+
+# Generic OAuth2 Authentication (recommended - for MCP_AUTH_MODE=oauth2)
+# The MCP server will verify OAuth2 access tokens from clients using standard JWT/JWKS
+
+# Required: JWKS endpoint for public key verification
+OAUTH2_JWKS_URI=https://your-auth-server/.well-known/jwks.json
+
+# Optional: Verify token issuer (iss claim)
+OAUTH2_ISSUER=https://your-auth-server/
+
+# Optional: Verify token audience (aud claim)
+OAUTH2_AUDIENCE=your-api-identifier
+
+# Optional: Restrict which OAuth2 clients can access the MCP
+ALLOWED_MCP_CLIENTS=client-id-1,client-id-2
+
+# Optional: Require specific scopes
+REQUIRED_MCP_SCOPES=mcp:read,mcp:execute
+
+# Legacy API Key Authentication (for MCP_AUTH_MODE=api-key)
+# Deprecated: Use OAuth2 for better security
 MCP_API_KEY=your-secure-key
 
 # External APIs (optional)
@@ -175,20 +197,157 @@ This is the main endpoint used by MCP clients to communicate with the server usi
 
 ### Authentication
 
-The MCP server supports optional API key authentication:
+The MCP server supports three authentication modes:
+
+#### 1. OAuth2 Authentication (Recommended)
+
+The server verifies OAuth2 access tokens using standard JWT/JWKS verification:
+
+**How it works:**
+1. Client obtains an access token from your OAuth2 provider
+2. Client includes token in requests: `Authorization: Bearer <access_token>`
+3. MCP server verifies the token signature using JWKS (public keys)
+4. MCP server validates issuer, audience, expiration, and scopes
+5. Optionally, client can include user token: `X-User-Token: Bearer <user_token>`
+
+**Configuration:**
+```bash
+MCP_AUTH_MODE=oauth2
+
+# Required: JWKS endpoint for token verification
+OAUTH2_JWKS_URI=https://your-auth-server/.well-known/jwks.json
+
+# Optional: Verify token issuer (iss claim)
+OAUTH2_ISSUER=https://your-auth-server/
+
+# Optional: Verify token audience (aud claim)
+OAUTH2_AUDIENCE=your-api-identifier
+
+# Optional: Whitelist allowed clients
+ALLOWED_MCP_CLIENTS=client-id-1,client-id-2
+
+# Optional: Require specific scopes
+REQUIRED_MCP_SCOPES=mcp:read,mcp:execute
+```
+
+**Supported OAuth2 Providers:**
+- **Auth0**: `OAUTH2_JWKS_URI=https://YOUR_DOMAIN.auth0.com/.well-known/jwks.json`
+- **Okta**: `OAUTH2_JWKS_URI=https://YOUR_DOMAIN.okta.com/oauth2/default/v1/keys`
+- **Azure AD**: `OAUTH2_JWKS_URI=https://login.microsoftonline.com/TENANT_ID/discovery/v2.0/keys`
+- **Keycloak**: `OAUTH2_JWKS_URI=https://YOUR_DOMAIN/auth/realms/REALM/protocol/openid-connect/certs`
+- **Any OAuth2/OIDC provider** that publishes JWKS public keys
+
+**Dual Token Pattern:**
+- **Access Token (Required)**: Proves the calling application is authorized
+- **User Token (Optional)**: Provides user context for personalized operations
+
+Example request:
+```bash
+curl -X POST http://localhost:3001/sse \
+  -H "Authorization: Bearer <client_access_token>" \
+  -H "X-User-Token: Bearer <user_oauth_token>"
+```
+
+#### 2. API Key Authentication (Legacy)
+
+Simple API key validation (deprecated, use OAuth2 instead):
 
 ```bash
-# In .env
+MCP_AUTH_MODE=api-key
 MCP_API_KEY=your-secure-key
 ```
 
-Tools can verify the API key before processing requests.
+Request header: `X-MCP-API-Key: your-secure-key`
+
+#### 3. Hybrid Mode
+
+Supports both OAuth2 and API key authentication:
+
+```bash
+MCP_AUTH_MODE=hybrid
+```
+
+The server will accept either OAuth2 tokens or API keys.
+
+#### 4. No Authentication
+
+Disable authentication (not recommended for production):
+
+```bash
+MCP_AUTH_MODE=none
+```
+
+### Setting Up OAuth2
+
+The MCP server works with any OAuth2/OIDC provider. Here's how to configure common providers:
+
+#### Any OAuth2 Provider (Generic Setup)
+
+1. **Find your JWKS URI:**
+   - Look for the `.well-known/jwks.json` or public keys endpoint
+   - This is typically discoverable via `/.well-known/openid-configuration`
+
+2. **Configure the MCP Server:**
+   ```bash
+   OAUTH2_JWKS_URI=https://your-provider/path/to/jwks.json
+   OAUTH2_ISSUER=https://your-provider/  # Optional
+   OAUTH2_AUDIENCE=your-api-id            # Optional
+   ```
+
+3. **Client obtains token using client credentials:**
+   ```bash
+   curl -X POST https://your-provider/oauth/token \
+     -H "Content-Type: application/x-www-form-urlencoded" \
+     -d "grant_type=client_credentials" \
+     -d "client_id=<client-id>" \
+     -d "client_secret=<client-secret>" \
+     -d "audience=<your-api-id>"  # If required
+   ```
+
+4. **Use token with MCP:**
+   ```bash
+   curl -X POST http://localhost:3001/sse \
+     -H "Authorization: Bearer <access_token>"
+   ```
+
+#### Provider-Specific Examples
+
+**Auth0:**
+```bash
+OAUTH2_JWKS_URI=https://YOUR_DOMAIN.auth0.com/.well-known/jwks.json
+OAUTH2_ISSUER=https://YOUR_DOMAIN.auth0.com/
+OAUTH2_AUDIENCE=https://api.your-domain.com/mcp
+```
+
+**Azure AD (Microsoft Entra ID):**
+```bash
+OAUTH2_JWKS_URI=https://login.microsoftonline.com/YOUR_TENANT_ID/discovery/v2.0/keys
+OAUTH2_ISSUER=https://sts.windows.net/YOUR_TENANT_ID/
+# Or for v2 tokens: OAUTH2_ISSUER=https://login.microsoftonline.com/YOUR_TENANT_ID/v2.0
+OAUTH2_AUDIENCE=YOUR_APPLICATION_ID
+```
+
+**Okta:**
+```bash
+OAUTH2_JWKS_URI=https://YOUR_DOMAIN.okta.com/oauth2/default/v1/keys
+OAUTH2_ISSUER=https://YOUR_DOMAIN.okta.com/oauth2/default
+OAUTH2_AUDIENCE=api://default
+```
+
+**Keycloak:**
+```bash
+OAUTH2_JWKS_URI=https://YOUR_DOMAIN/auth/realms/YOUR_REALM/protocol/openid-connect/certs
+OAUTH2_ISSUER=https://YOUR_DOMAIN/auth/realms/YOUR_REALM
+OAUTH2_AUDIENCE=your-client-id
+```
 
 ### CORS
 
 CORS is configured to allow connections from:
 - Claude Desktop
 - Local development (localhost)
+
+For production, configure `Access-Control-Allow-Origin` appropriately.
 
 ## Monitoring
 

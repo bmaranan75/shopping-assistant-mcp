@@ -1,14 +1,30 @@
 /**
  * HTTP client for MCP server to call Next.js API routes
- * This does NOT affect existing Next.js functionality
+ * The client can pass OAuth2 access tokens for authentication
  */
 export class MCPAgentClient {
   private baseUrl: string;
-  private apiKey: string;
+  private accessToken: string | null;
+  private userToken?: string | null;
 
-  constructor(baseUrl: string, apiKey: string) {
+  constructor(baseUrl: string, accessToken: string | null = null, userToken?: string | null) {
     this.baseUrl = baseUrl;
-    this.apiKey = apiKey;
+    this.accessToken = accessToken;
+    this.userToken = userToken;
+  }
+
+  /**
+   * Set the access token (client credentials token)
+   */
+  setAccessToken(token: string): void {
+    this.accessToken = token;
+  }
+
+  /**
+   * Set the user token (optional, for user-specific operations)
+   */
+  setUserToken(token: string): void {
+    this.userToken = token;
   }
 
   /**
@@ -25,12 +41,23 @@ export class MCPAgentClient {
       try {
         console.error(`[MCP Client] Calling ${agentName}:`, JSON.stringify(data, null, 2));
 
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+        };
+
+        // Add OAuth2 access token if available
+        if (this.accessToken) {
+          headers['Authorization'] = `Bearer ${this.accessToken}`;
+        }
+
+        // Add user token if available (optional)
+        if (this.userToken) {
+          headers['X-User-Token'] = `Bearer ${this.userToken}`;
+        }
+
         const response = await fetch(endpoint, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-MCP-API-Key': this.apiKey,
-          },
+          headers,
           body: JSON.stringify(data),
           signal: AbortSignal.timeout(30000), // 30s timeout
         });
