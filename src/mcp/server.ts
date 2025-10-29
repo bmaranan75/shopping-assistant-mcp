@@ -1,4 +1,10 @@
 #!/usr/bin/env node
+import { config } from 'dotenv';
+import { resolve } from 'path';
+
+// Load environment variables from .env.local
+config({ path: resolve(process.cwd(), '.env.local') });
+
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import {
@@ -10,6 +16,7 @@ import http from 'http';
 import { MCPAgentClient } from './client.js';
 import { mcpTools } from './tools.js';
 import { verifyAuth, sendAuthError } from './auth-verifier.js';
+import { getOpenIDConfiguration } from './openid-discovery.js';
 
 /**
  * MCP Server that exposes LangGraph agents via SSE (Server-Sent Events)
@@ -217,6 +224,25 @@ async function main() {
         transport: 'sse',
         tools: mcpTools.map(t => t.name),
       }));
+      return;
+    }
+
+    // OpenID Connect Discovery endpoint
+    if (req.url === '/.well-known/openid-configuration' && req.method === 'GET') {
+      console.error('[MCP Server] OpenID Discovery request');
+      
+      try {
+        const config = await getOpenIDConfiguration();
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(config, null, 2));
+      } catch (error: any) {
+        console.error('[MCP Server] Failed to get OpenID config:', error.message);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          error: 'internal_server_error',
+          error_description: 'Failed to retrieve OpenID configuration'
+        }));
+      }
       return;
     }
 
