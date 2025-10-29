@@ -66,15 +66,22 @@ export async function getOpenIDConfiguration(): Promise<OpenIDConfiguration> {
     // Fallback: construct from environment variables
     const jwksUri = process.env.OAUTH2_JWKS_URI;
     const issuer = process.env.OAUTH2_ISSUER;
+    const tokenEndpoint = process.env.OAUTH2_TOKEN_ENDPOINT;
     
     if (!jwksUri) {
       throw new Error('OAUTH2_JWKS_URI is required');
     }
     
+    // Construct token endpoint from issuer if not provided
+    const defaultTokenEndpoint = issuer 
+      ? `${issuer.replace(/\/$/, '')}/oauth/token`
+      : undefined;
+    
     // Return minimal config for Client Credentials flow only
     // No authorization_endpoint to prevent user login prompts
     const config: OpenIDConfiguration = {
       issuer: issuer || 'unknown',
+      token_endpoint: tokenEndpoint || defaultTokenEndpoint,
       jwks_uri: jwksUri,
       response_types_supported: ['token'],
       subject_types_supported: ['public'],
@@ -84,6 +91,7 @@ export async function getOpenIDConfiguration(): Promise<OpenIDConfiguration> {
     };
     
     console.log('[OpenID Discovery] Using minimal config (Client Credentials flow only)');
+    console.log('[OpenID Discovery] Token endpoint:', config.token_endpoint);
     
     cachedConfig = config;
     cacheTimestamp = now;
@@ -105,13 +113,17 @@ export async function getOpenIDConfiguration(): Promise<OpenIDConfiguration> {
     } = upstreamConfig;
     
     // Ensure only client_credentials grant type is advertised
+    // MUST include token_endpoint for ChatGPT Enterprise to recognize OAuth support
     const filteredConfig: OpenIDConfiguration = {
       ...mcpConfig,
       grant_types_supported: ['client_credentials'],
       response_types_supported: ['token'],
+      // Ensure token_endpoint is present (should already be in mcpConfig)
+      token_endpoint: mcpConfig.token_endpoint || upstreamConfig.token_endpoint,
     };
     
     console.log('[OpenID Discovery] Filtered config to support only Client Credentials flow');
+    console.log('[OpenID Discovery] Token endpoint:', filteredConfig.token_endpoint);
     
     // Cache the config
     cachedConfig = filteredConfig;

@@ -227,8 +227,10 @@ async function main() {
       return;
     }
 
-    // OpenID Connect Discovery endpoint
-    if (req.url === '/.well-known/openid-configuration' && req.method === 'GET') {
+    // OpenID Connect Discovery endpoint (support both root and /sse subpath)
+    if ((req.url === '/.well-known/openid-configuration' || 
+         req.url === '/sse/.well-known/openid-configuration') && 
+        req.method === 'GET') {
       console.error('[MCP Server] OpenID Discovery request');
       
       // If authentication is disabled, don't advertise OAuth2 capabilities
