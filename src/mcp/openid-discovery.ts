@@ -71,7 +71,8 @@ export async function getOpenIDConfiguration(): Promise<OpenIDConfiguration> {
       throw new Error('OAUTH2_JWKS_URI is required');
     }
     
-    // Return minimal config
+    // Return minimal config for Client Credentials flow only
+    // No authorization_endpoint to prevent user login prompts
     const config: OpenIDConfiguration = {
       issuer: issuer || 'unknown',
       jwks_uri: jwksUri,
@@ -81,6 +82,8 @@ export async function getOpenIDConfiguration(): Promise<OpenIDConfiguration> {
       token_endpoint_auth_methods_supported: ['client_secret_post', 'client_secret_basic'],
       grant_types_supported: ['client_credentials'],
     };
+    
+    console.log('[OpenID Discovery] Using minimal config (Client Credentials flow only)');
     
     cachedConfig = config;
     cacheTimestamp = now;
@@ -92,11 +95,29 @@ export async function getOpenIDConfiguration(): Promise<OpenIDConfiguration> {
     // Fetch from upstream provider
     const upstreamConfig = await fetchUpstreamConfig(upstreamConfigUrl);
     
+    // Remove authorization_endpoint to prevent user login prompts
+    // This forces clients like ChatGPT Enterprise to use Client Credentials flow only
+    const {
+      authorization_endpoint,
+      userinfo_endpoint,
+      end_session_endpoint,
+      ...mcpConfig
+    } = upstreamConfig;
+    
+    // Ensure only client_credentials grant type is advertised
+    const filteredConfig: OpenIDConfiguration = {
+      ...mcpConfig,
+      grant_types_supported: ['client_credentials'],
+      response_types_supported: ['token'],
+    };
+    
+    console.log('[OpenID Discovery] Filtered config to support only Client Credentials flow');
+    
     // Cache the config
-    cachedConfig = upstreamConfig;
+    cachedConfig = filteredConfig;
     cacheTimestamp = now;
     
-    return upstreamConfig;
+    return filteredConfig;
   } catch (error: any) {
     console.error('[OpenID Discovery] Failed to fetch upstream config:', error.message);
     

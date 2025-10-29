@@ -231,6 +231,17 @@ async function main() {
     if (req.url === '/.well-known/openid-configuration' && req.method === 'GET') {
       console.error('[MCP Server] OpenID Discovery request');
       
+      // If authentication is disabled, don't advertise OAuth2 capabilities
+      if (MCP_AUTH_MODE === 'none') {
+        console.error('[MCP Server] Authentication disabled - returning 404 for OpenID discovery');
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          error: 'not_found',
+          error_description: 'OpenID Connect Discovery not available when authentication is disabled'
+        }));
+        return;
+      }
+      
       try {
         const config = await getOpenIDConfiguration();
         res.writeHead(200, { 'Content-Type': 'application/json' });
