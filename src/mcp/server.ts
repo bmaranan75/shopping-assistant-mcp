@@ -27,6 +27,8 @@ import { generateOpenAPISchema, generateActionsManifest } from './openapi-schema
  * MCP Client (Claude Desktop/ChatGPT/Cursor) -> MCP Server (this file) -> Next.js API -> LangGraph Agents
  * 
  * Transport: SSE over HTTP (production-ready, works locally and in Kubernetes)
+ * 
+ * MCP Protocol Version: 2025-06-18 (current)
  */
 
 // Configuration from environment
@@ -34,6 +36,7 @@ const NEXTJS_URL = process.env.NEXTJS_URL || 'http://localhost:3000';
 const MCP_SERVER_PORT = parseInt(process.env.MCP_SERVER_PORT || '3001', 10);
 const MCP_SERVER_HOST = process.env.MCP_SERVER_HOST || '0.0.0.0'; // Accept connections from any IP
 const MCP_AUTH_MODE = process.env.MCP_AUTH_MODE || 'oauth2'; // 'api-key', 'oauth2', 'hybrid', 'none'
+const MCP_PROTOCOL_VERSION = '2025-06-18'; // Current MCP protocol version
 
 // Validate OAuth2 configuration if using OAuth2 mode
 if (MCP_AUTH_MODE === 'oauth2' || MCP_AUTH_MODE === 'hybrid') {
@@ -65,7 +68,12 @@ if (MCP_AUTH_MODE === 'api-key' || MCP_AUTH_MODE === 'hybrid') {
 // Initialize HTTP client (no authentication needed here, it will be passed per request)
 const agentClient = new MCPAgentClient(NEXTJS_URL);
 
-// Create MCP server
+// Track MCP protocol method calls for debugging
+let initializeCalled = false;
+let toolsListCalled = false;
+let toolsListCallCount = 0;
+
+// Create MCP server with proper protocol version and capabilities
 const server = new Server(
   {
     name: 'safeway-shopping-assistant',
@@ -73,15 +81,53 @@ const server = new Server(
   },
   {
     capabilities: {
-      tools: {},
+      tools: {
+        // Explicitly declare we support tools/list and tools/call
+        // No listChanged support for now to keep it simple
+      },
     },
   }
 );
 
+console.error('[MCP Server] Server created with capabilities:', {
+  tools: true,
+  protocolVersion: MCP_PROTOCOL_VERSION,
+});
+
 // Handle list_tools request
 server.setRequestHandler(ListToolsRequestSchema, async () => {
-  console.error('[MCP Server] Listing tools');
-  return { tools: mcpTools };
+  const startTime = Date.now();
+  toolsListCalled = true;
+  toolsListCallCount++;
+  
+  console.error('[MCP Server] ========================================');
+  console.error('[MCP Server] ✅ tools/list CALLED');
+  console.error(`[MCP Server] Call count: ${toolsListCallCount}`);
+  console.error(`[MCP Server] Timestamp: ${new Date().toISOString()}`);
+  console.error('[MCP Server] ========================================');
+  
+  // Ensure we return tools in the correct format
+  const toolsList = mcpTools.map(tool => ({
+    name: tool.name,
+    description: tool.description,
+    inputSchema: tool.inputSchema,
+  }));
+  
+  console.error(`[MCP Server] Returning ${toolsList.length} tools:`);
+  toolsList.forEach((tool, i) => {
+    console.error(`  ${i + 1}. ${tool.name} - ${tool.description}`);
+  });
+  console.error(`[MCP Server] Response format check:`);
+  console.error(`  - Type: ${typeof toolsList}`);
+  console.error(`  - Is Array: ${Array.isArray(toolsList)}`);
+  console.error(`  - Length: ${toolsList.length}`);
+  console.error(`[MCP Server] tools/list completed in ${Date.now() - startTime}ms`);
+  console.error('[MCP Server] ========================================');
+  
+  return { 
+    tools: toolsList,
+    // Optional: include nextCursor if implementing pagination (not needed for <50 tools)
+  };
 });
 
 // Handle call_tool request
@@ -200,6 +246,23 @@ async function main() {
       console.error(`[MCP Server] OAuth2 Audience: ${process.env.OAUTH2_AUDIENCE}`);
     }
   }
+  
+  // Periodic status check to monitor if ChatGPT is calling tools/list
+  setInterval(() => {
+    console.error('[MCP Server] ========================================');
+    console.error('[MCP Server] Protocol Call Status:');
+    console.error(`  - tools/list called: ${toolsListCalled ? `YES ✅ (${toolsListCallCount} times)` : 'NO ❌'}`);
+    console.error(`  - Last check: ${new Date().toISOString()}`);
+    if (!toolsListCalled) {
+      console.error('  ⚠️  WARNING: tools/list has never been called!');
+      console.error('  ⚠️  This means ChatGPT is not discovering tools.');
+      console.error('  ⚠️  Possible causes:');
+      console.error('     1. Authentication failure (check OAuth2 config)');
+      console.error('     2. ChatGPT not completing MCP handshake');
+      console.error('     3. ChatGPT configured for OpenAPI not MCP');
+    }
+    console.error('[MCP Server] ========================================');
+  }, 30000); // Every 30 seconds
 
   // Create HTTP server for SSE transport
   const httpServer = http.createServer(async (req, res) => {
