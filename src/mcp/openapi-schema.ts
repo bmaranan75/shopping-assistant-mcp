@@ -13,9 +13,22 @@ export interface OpenAPISchema {
     title: string;
     description: string;
     version: string;
+    contact?: {
+      name?: string;
+      email?: string;
+      url?: string;
+    };
+    license?: {
+      name: string;
+      url?: string;
+    };
   };
   servers: Array<{
     url: string;
+    description?: string;
+  }>;
+  tags?: Array<{
+    name: string;
     description?: string;
   }>;
   paths: Record<string, any>;
@@ -41,6 +54,7 @@ function convertJsonSchemaToOpenAPI(jsonSchema: any): any {
 
 /**
  * Generate OpenAPI 3.0 schema from MCP tools
+ * Enhanced for ChatGPT Enterprise compatibility
  */
 export function generateOpenAPISchema(serverUrl: string): OpenAPISchema {
   const paths: Record<string, any> = {};
@@ -53,9 +67,19 @@ export function generateOpenAPISchema(serverUrl: string): OpenAPISchema {
     
     paths[pathName] = {
       post: {
+        // Critical: operationId must be unique and valid
         operationId: tool.name,
+        
+        // ChatGPT uses these for discovery
         summary: tool.description,
         description: tool.description,
+        
+        // Add tags for categorization (helps ChatGPT organize tools)
+        tags: ['shopping', 'assistant'],
+        
+        // Mark as deprecated: false to ensure it's considered active
+        deprecated: false,
+        
         requestBody: {
           required: true,
           content: {
@@ -94,11 +118,16 @@ export function generateOpenAPISchema(serverUrl: string): OpenAPISchema {
             description: 'Internal server error',
           },
         },
+        // Keep security at operation level
         security: [
           {
             oauth2: [],
           },
         ],
+        
+        // Add x-openai-isConsequential for actions that modify data
+        // This tells ChatGPT to ask for confirmation before executing
+        'x-openai-isConsequential': ['add_to_cart', 'checkout', 'add_payment_method'].includes(tool.name),
       },
     };
   }
@@ -107,15 +136,35 @@ export function generateOpenAPISchema(serverUrl: string): OpenAPISchema {
   const schema: OpenAPISchema = {
     openapi: '3.0.0',
     info: {
-      title: 'Safeway Shopping Assistant MCP',
-      description: 'AI-powered shopping assistant with product search, cart management, and checkout capabilities',
+      title: 'Safeway Shopping Assistant',
+      description: 'AI-powered shopping assistant with product search, cart management, and checkout capabilities. ' +
+                   'Use these tools to help users search for products, manage their shopping cart, and complete purchases.',
       version: '1.0.0',
+      // Add contact and license info for better ChatGPT recognition
+      contact: {
+        name: 'Safeway Shopping Assistant Support',
+        email: 'support@example.com'
+      },
+      license: {
+        name: 'Proprietary',
+      }
     },
     servers: [
       {
         url: serverUrl,
-        description: 'MCP Server',
+        description: 'Shopping Assistant MCP Server',
       },
+    ],
+    // Add tags for organization
+    tags: [
+      {
+        name: 'shopping',
+        description: 'Shopping and cart management operations'
+      },
+      {
+        name: 'assistant',
+        description: 'AI assistant tools'
+      }
     ],
     paths,
     components: {

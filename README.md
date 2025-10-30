@@ -1,17 +1,30 @@
 # Shopping Assistant - MCP Server
 
-Model Context Protocol (MCP) server for the Shopping Assistant application. This server exposes AI agent capabilities to MCP clients like Claude Desktop.
+Model Context Protocol (MCP) server for the Shopping Assistant application. This server exposes AI agent capabilities to both **MCP clients** (Claude Desktop) and **OpenAPI/REST clients** (ChatGPT Enterprise).
 
-## What is MCP?
+## 🚀 Quick Start Guides
 
-The Model Context Protocol (MCP) is an open standard that enables AI applications to seamlessly integrate with various data sources and tools. This MCP server exposes shopping assistant agents as tools that can be called from Claude Desktop or any other MCP-compatible client.
+- **[ChatGPT Enterprise Setup →](SOLUTION.md)** - Fix "connected but no actions" issue
+- **[Visual Guide →](VISUAL_GUIDE.md)** - Understand MCP vs OpenAPI/REST
+- **[Quick Commands →](QUICK_COMMANDS.md)** - Test and configure your server
+
+## What is This Server?
+
+This server provides **two interfaces** to the same shopping assistant capabilities:
+
+1. **MCP Protocol** (for Claude Desktop) - JSON-RPC over Server-Sent Events
+2. **OpenAPI/REST** (for ChatGPT Enterprise) - Standard HTTP REST endpoints
+
+Both interfaces provide the same 6 tools for shopping operations.
 
 ## Features
 
 - **Catalog Agent**: Search and browse product catalog
-- **Cart Agent**: Manage shopping cart operations
+- **Cart Agent**: Manage shopping cart operations  
 - **Deals Agent**: Find deals and promotions
 - **Payment Agent**: Handle payment operations
+- **Dual Protocol Support**: MCP + OpenAPI/REST
+- **OAuth2 Authentication**: Enterprise-grade security with JWKS verification
 
 ## Architecture
 
@@ -427,14 +440,35 @@ LANGCHAIN_PROJECT=shopping-assistant-mcp
 
 ## Troubleshooting
 
+### ❌ ChatGPT Enterprise: "Connected but no actions/tools"
+
+**Problem**: ChatGPT shows as connected but doesn't list any actions.
+
+**Cause**: ChatGPT is configured for MCP protocol instead of OpenAPI/REST.
+
+**Solution**: See **[SOLUTION.md](SOLUTION.md)** for detailed fix.
+
+**Quick Fix**:
+1. Delete current ChatGPT connection
+2. Add new action: Import from `http://your-server:3001/.well-known/openapi.json`
+3. Configure OAuth2 authentication
+
+**How to verify**: Check logs for `POST /tools/*` (correct) vs `SSE connection` (wrong)
+
 ### Server won't start
-- Check if port 3001 is available
-- Verify Node.js version (20+)
+- Check if port 3001 is available: `lsof -i :3001`
+- Verify Node.js version (20+): `node --version`
 - Check .env configuration
 
 ### Tools not working
 - Ensure LangGraph agents server is running (port 2024)
 - Verify LANGGRAPH_API_URL in .env
+- Test health endpoint: `curl http://localhost:3001/health`
+
+### Authentication errors
+- Verify OAuth2 configuration in .env
+- Test token endpoint: `curl https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token`
+- Check JWKS URI is accessible
 - Check network connectivity
 
 ### Claude Desktop can't connect
