@@ -17,6 +17,7 @@ import { MCPAgentClient } from './client.js';
 import { mcpTools } from './tools.js';
 import { verifyAuth, sendAuthError } from './auth-verifier.js';
 import { getOpenIDConfiguration } from './openid-discovery.js';
+import { generateOpenAPISchema, generateActionsManifest } from './openapi-schema.js';
 
 /**
  * MCP Server that exposes LangGraph agents via SSE (Server-Sent Events)
@@ -296,6 +297,32 @@ async function main() {
       return;
     }
 
+    // OpenAPI Schema endpoint for ChatGPT Enterprise
+    if ((req.url === '/.well-known/openapi.json' || req.url === '/openapi.json') && 
+        req.method === 'GET') {
+      console.error('[MCP Server] OpenAPI schema request');
+      
+      const serverUrl = `http://${MCP_SERVER_HOST}:${MCP_SERVER_PORT}`;
+      const schema = generateOpenAPISchema(serverUrl);
+      
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(schema, null, 2));
+      return;
+    }
+
+    // Actions manifest endpoint for ChatGPT Enterprise
+    if ((req.url === '/.well-known/ai-plugin.json' || req.url === '/ai-plugin.json') && 
+        req.method === 'GET') {
+      console.error('[MCP Server] Actions manifest request');
+      
+      const serverUrl = `http://${MCP_SERVER_HOST}:${MCP_SERVER_PORT}`;
+      const manifest = generateActionsManifest(serverUrl);
+      
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(manifest, null, 2));
+      return;
+    }
+
     // MCP SSE endpoint
     if (req.url === '/sse' && req.method === 'POST') {
       console.error('[MCP Server] New SSE connection attempt');
@@ -328,6 +355,135 @@ async function main() {
       // Handle connection close
       req.on('close', () => {
         console.error('[MCP Server] SSE connection closed');
+      });
+
+      return;
+    }
+
+    // REST-style tool execution endpoints for ChatGPT Enterprise
+    // These match the paths defined in the OpenAPI schema
+    if (req.url?.startsWith('/tools/') && req.method === 'POST') {
+      console.error('[MCP Server] REST tool execution request:', req.url);
+
+      // Verify authentication
+      const authResult = await verifyAuth(req);
+      
+      if (!authResult.success) {
+        console.error('[MCP Server] Authentication failed:', authResult.error);
+        sendAuthError(res, authResult.error || 'Authentication required');
+        return;
+      }
+
+      // Extract tool name from URL
+      const toolName = req.url.substring('/tools/'.length);
+      
+      // Parse request body
+      let requestBody = '';
+      req.on('data', (chunk) => {
+        requestBody += chunk.toString();
+      });
+
+      req.on('end', async () => {
+        try {
+          const args = JSON.parse(requestBody);
+          console.error(`[MCP Server] Executing tool: ${toolName}`, args);
+
+          // Store auth tokens for this request
+          if (authResult.accessToken) {
+            agentClient.setAccessToken(authResult.accessToken);
+          }
+          
+          if (authResult.userToken) {
+            agentClient.setUserToken(authResult.userToken);
+          }
+
+          // Execute the tool (reuse the same logic from the MCP handler)
+          let result;
+          switch (toolName) {
+            case 'search_products':
+              result = await agentClient.callAgent('catalog', {
+                action: 'search',
+                query: args.query,
+                category: args.category,
+                limit: args.limit,
+              });
+              break;
+
+            case 'add_to_cart':
+              result = await agentClient.callAgent('cart', {
+                action: 'add',
+                productCode: args.productCode,
+                quantity: args.quantity,
+              });
+              break;
+
+            case 'view_cart':
+              result = await agentClient.callAgent('cart', {
+                action: 'view',
+              });
+              break;
+
+            case 'checkout':
+              result = await agentClient.callAgent('cart', {
+                action: 'checkout',
+                cartSummary: args.cartSummary,
+              });
+              break;
+
+            case 'add_payment_method':
+              result = await agentClient.callAgent('payment', {
+                action: 'add',
+                type: args.type,
+              });
+              break;
+
+            case 'get_deals':
+              result = await agentClient.callAgent('deals', {
+                action: 'get',
+                category: args.category,
+              });
+              break;
+
+            default:
+              res.writeHead(404, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: 'Unknown tool: ' + toolName }));
+              return;
+          }
+
+          // Format response in MCP format
+          let responseText = '';
+          if (result && result.messages && Array.isArray(result.messages)) {
+            const lastMessage = result.messages[result.messages.length - 1];
+            if (lastMessage && lastMessage.kwargs && lastMessage.kwargs.content) {
+              responseText = lastMessage.kwargs.content;
+            } else {
+              responseText = JSON.stringify(result, null, 2);
+            }
+          } else {
+            responseText = JSON.stringify(result, null, 2);
+          }
+
+          const response = {
+            content: [
+              {
+                type: 'text',
+                text: responseText,
+              },
+            ],
+          };
+
+          console.error(`[MCP Server] Tool ${toolName} completed successfully`);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(response, null, 2));
+
+        } catch (error: any) {
+          console.error(`[MCP Server] Tool execution failed:`, error);
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            error: 'Internal server error',
+            message: error.message,
+          }));
+        }
       });
 
       return;

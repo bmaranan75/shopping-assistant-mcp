@@ -105,7 +105,9 @@ npm run mcp:inspect
 
 This opens a web UI where you can test MCP tools interactively.
 
-## Using with Claude Desktop
+## Using with MCP Clients
+
+### Claude Desktop
 
 1. Start the MCP server: `npm run dev`
 
@@ -130,12 +132,25 @@ This opens a web UI where you can test MCP tools interactively.
 
 3. Restart Claude Desktop
 
-4. Available tools:
-   - `catalog_search` - Search for products
-   - `cart_view` - View shopping cart
-   - `cart_add` - Add items to cart
-   - `deals_search` - Find deals
-   - `payment_add` - Add payment method
+### ChatGPT Enterprise
+
+ChatGPT Enterprise integration requires OAuth2 authentication and OpenAPI schema discovery.
+
+**Quick Setup**:
+1. Configure Azure AD OAuth2 (see below)
+2. Start the MCP server: `npm run dev`
+3. Test discovery endpoints: `./test-chatgpt-endpoints.sh`
+4. In ChatGPT Enterprise, add a new Action pointing to your server
+
+**Full Guide**: See [docs/CHATGPT_ENTERPRISE_INTEGRATION.md](docs/CHATGPT_ENTERPRISE_INTEGRATION.md) for detailed setup instructions.
+
+**Available Tools**:
+- `search_products` - Search for products
+- `add_to_cart` - Add items to cart
+- `view_cart` - View shopping cart
+- `checkout` - Complete checkout
+- `add_payment_method` - Add payment method
+- `get_deals` - Find deals and promotions
 
 ## Project Structure
 
@@ -186,12 +201,50 @@ docker run -p 3001:3001 \
 GET /health
 ```
 
-### SSE Endpoint (MCP Protocol)
-```bash
-GET /sse
-```
+### MCP Protocol Endpoints
 
+#### SSE Endpoint (for MCP clients like Claude Desktop)
+```bash
+POST /sse
+```
 This is the main endpoint used by MCP clients to communicate with the server using Server-Sent Events.
+
+#### Tool Execution (REST-style for ChatGPT Enterprise)
+```bash
+POST /tools/{tool_name}
+```
+REST endpoints for each tool (e.g., `/tools/search_products`, `/tools/add_to_cart`).
+
+### Discovery Endpoints (for ChatGPT Enterprise)
+
+#### OpenID Connect Discovery
+```bash
+GET /.well-known/openid-configuration
+```
+Returns OAuth2 provider configuration (issuer, token endpoint, JWKS URI).
+
+#### OAuth Protected Resource Metadata
+```bash
+GET /.well-known/oauth-protected-resource
+```
+Declares this server as an OAuth2 protected resource.
+
+#### OpenAPI Schema
+```bash
+GET /.well-known/openapi.json
+```
+Returns OpenAPI 3.0 schema describing all available tools/actions.
+
+#### Actions Manifest
+```bash
+GET /.well-known/ai-plugin.json
+```
+Returns ChatGPT Actions manifest with human-readable descriptions.
+
+**Test all endpoints**:
+```bash
+./test-chatgpt-endpoints.sh
+```
 
 ## Security
 
